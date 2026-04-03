@@ -1,85 +1,179 @@
-# Data Cleaning & Feature Engineering Decisions
 
-## 1. Data Cleaning
+# DECISIONS.md – Data Cleaning & Preparation
 
-### Duplicate Removal
-
-Duplicates were identified based on `transaction_id`. Since each transaction should have a unique identifier, duplicate rows indicate redundancy or data errors. Therefore, duplicates were removed while keeping the first occurrence of each transaction.
-
-### Amount Cleaning
-
-Some values in the `montant` column used commas instead of dots as decimal separators, which caused the column to be interpreted as text (`object`). These commas were replaced with dots, and the column was converted to a numeric format (`float`) to allow proper calculations.
-
-### Text Standardization
-
-Several text columns were standardized to ensure consistency and avoid errors:
-
-* `devise` values were converted to uppercase (e.g., eur → EUR)
-* `segment_client` values were normalized to a consistent format (e.g., PREMIUM → Premium)
-* Extra spaces in the `agence` column were removed
-
-This ensures uniform formatting across the dataset.
-
-### Missing Values Handling
-
-Missing values were handled using different strategies depending on the column:
-
-* The mode was used for categorical variables such as `segment_client`
-* The median was used for numerical variables such as `score_credit_client`
-* Missing values in `agence` were replaced with "Inconnue"
-
-This approach preserves the dataset while minimizing bias.
+## Project: FinanceCore SA – Bank Transactions
 
 ---
 
-## 2. Outlier Detection & Treatment
+## 1. Data Exploration
 
-### Outliers in `montant`
+The dataset contains 2060 rows and several data quality issues:
 
-Outliers were detected using the IQR method. This method was preferred over Z-score because it is more robust and focuses on the distribution of the majority of the data rather than being influenced by extreme values.
+* Missing values in important columns (`score_credit_client`, `segment_client`, `agence`)
+* Duplicate transaction IDs
+* Inconsistent date formats
+* Incorrect numeric formats (commas instead of dots)
+* Suspicious and extreme values in `montant`
+* Inconsistent text formatting (case and spaces)
 
-Both methods were tested:
-
-* IQR detected 108 outliers
-* Z-score detected only 20
-
-Since Z-score depends on the mean and the dataset contains extreme values, IQR was considered more accurate and was selected.
-
-### Credit Score Anomalies
-
-For `score_credit_client`, instead of using IQR or Z-score, a rule-based approach was applied:
-
-* Scores below 0 or above 850 were flagged as invalid
-
-This approach was chosen because valid credit score ranges are already known, making statistical methods unnecessary in this case.
-
-### Anomaly Flagging
-
-A boolean column `is_anomaly` was created to flag abnormal records. No rows were deleted or modified.
-
-This decision was made because anomalous values are not necessarily incorrect — they may represent rare but valid cases. Therefore, keeping them while marking them allows for further analysis without losing information.
+A full cleaning process was required before analysis.
 
 ---
 
-## 3. Currency Verification
+## 2. Duplicate Handling
 
-A new column `montant_eur_verifie` was calculated using:
+Duplicate rows were identified using `transaction_id`.
+
+**Decision:**
+Duplicates were removed while keeping the first occurrence.
+
+**Reason:**
+Each transaction should have a unique ID. Keeping the first occurrence ensures consistency without introducing ambiguity. Other options like keeping the last occurrence or aggregating were not used because duplicates should not represent multiple valid transactions.
+
+---
+
+## 3. Data Type and Format Corrections
+
+### Dates
+
+**Issue:** Mixed formats (`DD/MM/YYYY` and `YYYY-MM-DD`)
+
+**Decision:** Converted all values to a unified datetime format
+
+**Reason:** Required for time-based analysis and feature extraction
+
+---
+
+### Montant
+
+**Issue:** Some values used commas instead of dots, causing incorrect data types
+
+**Decision:** Replaced commas with dots and converted to float
+
+**Reason:** Ensures correct numerical calculations. Using direct replacement avoids introducing missing values that could happen with automatic conversion methods.
+
+---
+
+### Solde Avant
+
+**Issue:** Values contained text suffix ("EUR")
+
+**Decision:** Removed the suffix and converted to float
+
+**Reason:** Numeric fields must be clean for analysis.
+
+---
+
+## 4. Text Standardization
+
+**Actions:**
+
+* Converted `devise` to uppercase
+* Standardized `segment_client` (e.g., PREMIUM → Premium)
+* Removed extra spaces in `agence`
+
+**Reason:**
+Ensures consistency and prevents errors during grouping or analysis.
+
+---
+
+## 5. Missing Values Treatment
+
+**Decisions:**
+
+* Median for `score_credit_client`
+* Mode for `segment_client`
+* "Inconnue" for missing `agence`
+
+**Reason:**
+Median is robust to outliers, mode preserves the most frequent category, and replacing with "Inconnue" avoids data loss while keeping missing information explicit.
+
+---
+
+## 6. Outlier Detection and Treatment
+
+### Montant
+
+Two methods were tested:
+
+* IQR → detected 108 outliers
+* Z-score → detected 20 outliers
+
+**Decision:** Used IQR
+
+**Reason:**
+IQR focuses on the central distribution and is not affected by extreme values. Z-score depends on the mean, which is influenced by large outliers, making it less reliable in this dataset.
+
+---
+
+### Credit Score
+
+**Decision:** Used a rule-based approach
+
+* Values < 0 or > 850 were flagged
+
+**Reason:**
+Credit scores follow a known valid range. Using statistical methods like IQR or Z-score is unnecessary when domain rules are available.
+
+---
+
+### Anomaly Handling
+
+A column `is_anomaly` was created to flag abnormal values.
+
+**Decision:** No rows were removed or corrected
+
+**Reason:**
+Outliers are not always errors. They may represent rare but valid cases. Keeping them with a flag preserves data integrity and allows further analysis.
+
+---
+
+## 7. Currency Verification
+
+A new column `montant_eur_verifie` was created using:
+
 montant / taux_change_eur
 
-This was used to verify whether the existing `montant_eur` values were correctly computed.
+**Reason:**
+To verify whether `montant_eur` was correctly calculated.
 
-During this process, some suspicious values were identified in the `montant` column (e.g., 99999, 200000, 888888). These values appear artificial or unrealistic. However, no correction or deletion was applied, as there is no confirmation that they are incorrect.
+During this step, suspicious values such as 99999, 200000, and 888888 were identified. These values appear artificial, but no correction was applied due to lack of confirmation.
 
 ---
 
-## 4. Final Dataset Preparation
+## 8. Feature Engineering
 
-### Column Cleaning and Organization
+The following features were created:
 
-Unnecessary helper columns created during the analysis (such as intermediate calculation columns) were removed. The remaining columns were reorganized into a logical structure to improve readability and usability.
+* Date features: `annee`, `mois`, `trimestre`, `jour_semaine`
+* Risk category: `categorie_risque`
+* Client metrics: `nb_transactions`, `montant_moyen`, `nb_produits_distincts`
+* Operational metric: `taux_rejet_agence`
 
-### Export
+**Reason:**
+These features improve analysis and provide meaningful business insights.
 
-The final dataset was exported as `financecore_clean.csv`. Numeric values were rounded to improve readability, as some columns contained excessive decimal precision.
+---
+
+## 9. Final Dataset Preparation
+
+**Actions:**
+
+* Removed helper columns used during processing
+* Reordered columns logically
+* Rounded numeric values
+
+**Reason:**
+Improves readability, usability, and overall dataset quality.
+
+---
+
+## 10. Final Output
+
+The cleaned and enriched dataset was exported as:
+
+financecore_clean.csv
+
+It is now ready for analysis, dashboarding, and further use.
 
 ---
